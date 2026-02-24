@@ -1,6 +1,12 @@
 pipeline {
     agent any
 
+    environment {
+        DOCKER_HUB = "nithinkunusoth"
+        IMAGE_NAME = "my-k8s-app"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+
     stages {
 
         stage('Checkout from GitHub') {
@@ -19,50 +25,51 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh '''
-                docker build -t my-k8s-app:${BUILD_NUMBER} .
-                docker tag my-k8s-app:${BUILD_NUMBER} nithinkunusoth/my-k8s-app:${BUILD_NUMBER}
+                docker build -t $DOCKER_HUB/$IMAGE_NAME:$IMAGE_TAG .
                 '''
             }
         }
 
-        stage('Push Docker Image') {
-            environment {
-                DOCKER_IMAGE = "nithinkunusoth/my-k8s-app:${BUILD_NUMBER}"
-                REGISTRY_CREDENTIALS = credentials('docker-cred')
-            }
+        stage('Docker Login') {
             steps {
-                script {
-                    def dockerImage = docker.image("${DOCKER_IMAGE}")
-                    docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
-                        dockerImage.push()
-                    }
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-cred',
+                    usernameVariable: 'DOCKER_USERNAME',
+                    passwordVariable: 'DOCKER_PASSWORD'
+                )]) {
+                    sh '''
+                        echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+                    '''
                 }
-           }
+            }
         }
-        
 
+        stage('Push Docker Image') {
+            steps {
+                sh '''
+                docker push $DOCKER_HUB/$IMAGE_NAME:$IMAGE_TAG
+                '''
+            }
+        }
 
-    stage('Start Minikube if not running') {
-    steps {
-        sh '''
-        if ! minikube status | grep -q "apiserver: Running"; then
-            echo "Minikube is not running. Starting now..."
-            minikube start --driver=virtualbox
-        fi
-        '''
-    }
-}
+        stage('Start Minikube if not running') {
+            steps {
+                sh '''
+                if ! minikube status | grep -q "apiserver: Running"; then
+                    echo "Minikube is not running. Starting now..."
+                    minikube start --driver=virtualbox
+                fi
+                '''
+            }
+        }
 
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
-                # Replace image tag inside deployment.yaml
-                sed -i "s/IMAGE_TAG/${BUILD_NUMBER}/g" k8s/deployment.yaml
+                sed -i "s/IMAGE_TAG/$IMAGE_TAG/g" k8s/deployment.yaml
 
-                # Load image into Minikube
-                minikube image load nithinkunusoth/my-k8s-app:${BUILD_NUMBER}
+                minikube image load $DOCKER_HUB/$IMAGE_NAME:$IMAGE_TAG
 
-                # Apply manifests
                 kubectl apply -f k8s/deployment.yaml
                 kubectl apply -f k8s/service.yaml
                 '''
