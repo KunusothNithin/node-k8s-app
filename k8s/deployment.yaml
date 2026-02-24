@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: my-k8s-app
-        image: nithinkunusoth/my-node-app:v1  # your Docker Hub image
+        image: nithinkunusoth/my-node-app:IMAGE_TAG  # your Docker Hub image
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
