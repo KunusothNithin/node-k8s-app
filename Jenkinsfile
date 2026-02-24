@@ -17,18 +17,23 @@ pipeline {
         }
 
         stage('Build Docker Image') {
-            steps {
-                sh '''
-                docker build -t my-k8s-app:${BUILD_NUMBER} .
-                docker tag my-k8s-app:${BUILD_NUMBER} nithinkunusoth/my-k8s-app:${BUILD_NUMBER}
-                '''
-            }
-        }
 
-        stage('Push Docker Image') {
-            steps {
-                sh 'docker push nithinkunusoth/my-k8s-app:${BUILD_NUMBER}'
+
+            environment {
+                DOCKER_IMAGE = "nithinkunusoth/my-k8s-app:${BUILD_NUMBER}"
+                // DOCKERFILE_LOCATION = "java-maven-sonar-argocd-k8s/spring-boot-app/Dockerfile"
+                REGISTRY_CREDENTIALS = credentials('docker-cred')
             }
+            steps {
+                script {
+                    sh 'cd node-k8s-app && docker build -t ${DOCKER_IMAGE} .'
+                    def dockerImage = docker.image("${DOCKER_IMAGE}")
+                    docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
+                        dockerImage.push()
+                    }
+                }
+           }
+            
         }
 
     stage('Start Minikube if not running') {
