@@ -30,27 +30,24 @@ pipeline {
             }
         }
 
-        stage('Docker Login') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'docker-cred',
-                    usernameVariable: 'DOCKER_USERNAME',
-                    passwordVariable: 'DOCKER_PASSWORD'
-                )]) {
-                    sh '''
-                        echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
-                    '''
-                }
-            }
-        }
 
-        stage('Push Docker Image') {
-            steps {
-                sh '''
-                docker push $DOCKER_HUB/$IMAGE_NAME:$IMAGE_TAG
-                '''
-            }
+        stage('Docker Login + Push (Debug)') {
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'docker-cred',
+            usernameVariable: 'DOCKER_USERNAME',
+            passwordVariable: 'DOCKER_PASSWORD'
+        )]) {
+            sh '''
+                echo "Logging in..."
+                echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+
+                echo "Pushing image..."
+                docker push nithinkunusoth/my-k8s-app:${BUILD_NUMBER}
+            '''
         }
+    }
+}
 
         stage('Start Minikube if not running') {
             steps {
