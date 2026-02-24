@@ -1,12 +1,6 @@
 pipeline {
     agent any
 
-    environment {
-        DOCKER_HUB = "nithinkunusoth"
-        IMAGE_NAME = "my-k8s-app"
-        IMAGE_TAG = "${BUILD_NUMBER}"
-    }
-
     stages {
 
         stage('Checkout from GitHub') {
@@ -18,77 +12,61 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh '''
-                set -e
-                npm install
-                '''
+                sh 'npm install'
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 sh '''
-                set -e
-                docker build -t $DOCKER_HUB/$IMAGE_NAME:$IMAGE_TAG .
-                docker images
+                docker build -t my-k8s-app:${BUILD_NUMBER} .
+                docker tag my-k8s-app:${BUILD_NUMBER} nithinkunusoth/my-k8s-app:${BUILD_NUMBER}
                 '''
-            }
-        }
-
-        stage('Docker Login') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'docker-cred',
-                    usernameVariable: 'DOCKER_USERNAME',
-                    passwordVariable: 'DOCKER_PASSWORD'
-                )]) {
-                    sh '''
-                    set -e
-                    echo "Logging into Docker Hub..."
-                    echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
-                    '''
-                }
             }
         }
 
         stage('Push Docker Image') {
+            environment {
+                DOCKER_IMAGE = "nithinkunusoth/my-k8s-app:${BUILD_NUMBER}"
+                REGISTRY_CREDENTIALS = credentials('docker')
+            }
             steps {
-                sh '''
-                set -e
-                echo "Pushing image..."
-                docker push $DOCKER_HUB/$IMAGE_NAME:$IMAGE_TAG
-                '''
+                script {
+                    def dockerImage = docker.image("${DOCKER_IMAGE}")
+                    docker.withRegistry('https://index.docker.io/v1/', "docker") {
+                        dockerImage.push()
+                    }
+                }
             }
         }
 
-        stage('Start Minikube if not running') {
-            steps {
-                sh '''
-                set -e
-                if ! minikube status | grep -q "apiserver: Running"; then
-                    echo "Starting Minikube..."
-                    minikube start --driver=virtualbox
-                fi
-                '''
-            }
-        }
+        
+
+    stage('Start Minikube if not running') {
+    steps {
+        sh '''
+        if ! minikube status | grep -q "apiserver: Running"; then
+            echo "Minikube is not running. Starting now..."
+            minikube start --driver=virtualbox
+        fi
+        '''
+    }
+}
 
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
-                set -e
-                sed -i "s/IMAGE_TAG/$IMAGE_TAG/g" k8s/deployment.yaml
+                # Replace image tag inside deployment.yaml
+                sed -i "s/IMAGE_TAG/${BUILD_NUMBER}/g" k8s/deployment.yaml
 
+                # Load image into Minikube
+                minikube image load nithinkunusoth/my-k8s-app:${BUILD_NUMBER}
+
+                # Apply manifests
                 kubectl apply -f k8s/deployment.yaml
                 kubectl apply -f k8s/service.yaml
                 '''
             }
-        }
-    }
-
-    post {
-        always {
-            sh 'docker logout || true'
         }
     }
 }
