@@ -18,42 +18,55 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh 'npm install'
+                sh '''
+                set -e
+                npm install
+                '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 sh '''
+                set -e
                 docker build -t $DOCKER_HUB/$IMAGE_NAME:$IMAGE_TAG .
+                docker images
                 '''
             }
         }
 
-
-        stage('Docker Login + Push (Debug)') {
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'docker-cred',
-            usernameVariable: 'DOCKER_USERNAME',
-            passwordVariable: 'DOCKER_PASSWORD'
-        )]) {
-            sh '''
-                echo "Logging in..."
-                echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
-
-                echo "Pushing image..."
-                docker push nithinkunusoth/my-k8s-app:${BUILD_NUMBER}
-            '''
+        stage('Docker Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-cred',
+                    usernameVariable: 'DOCKER_USERNAME',
+                    passwordVariable: 'DOCKER_PASSWORD'
+                )]) {
+                    sh '''
+                    set -e
+                    echo "Logging into Docker Hub..."
+                    echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+                    '''
+                }
+            }
         }
-    }
-}
+
+        stage('Push Docker Image') {
+            steps {
+                sh '''
+                set -e
+                echo "Pushing image..."
+                docker push $DOCKER_HUB/$IMAGE_NAME:$IMAGE_TAG
+                '''
+            }
+        }
 
         stage('Start Minikube if not running') {
             steps {
                 sh '''
+                set -e
                 if ! minikube status | grep -q "apiserver: Running"; then
-                    echo "Minikube is not running. Starting now..."
+                    echo "Starting Minikube..."
                     minikube start --driver=virtualbox
                 fi
                 '''
@@ -63,14 +76,19 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
+                set -e
                 sed -i "s/IMAGE_TAG/$IMAGE_TAG/g" k8s/deployment.yaml
-
-                minikube image load $DOCKER_HUB/$IMAGE_NAME:$IMAGE_TAG
 
                 kubectl apply -f k8s/deployment.yaml
                 kubectl apply -f k8s/service.yaml
                 '''
             }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker logout || true'
         }
     }
 }
