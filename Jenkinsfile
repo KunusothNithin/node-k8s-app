@@ -17,8 +17,15 @@ pipeline {
         }
 
         stage('Build Docker Image') {
+            steps {
+                sh '''
+                docker build -t my-k8s-app:${BUILD_NUMBER} .
+                docker tag my-k8s-app:${BUILD_NUMBER} nithinkunusoth/my-k8s-app:${BUILD_NUMBER}
+                '''
+            }
+        }
 
-
+        stage('Push Docker Image') {
             environment {
                 DOCKER_IMAGE = "nithinkunusoth/my-k8s-app:${BUILD_NUMBER}"
                 // DOCKERFILE_LOCATION = "java-maven-sonar-argocd-k8s/spring-boot-app/Dockerfile"
@@ -33,8 +40,9 @@ pipeline {
                     }
                 }
            }
-            
         }
+        
+
 
     stage('Start Minikube if not running') {
     steps {
